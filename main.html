@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tower of Hanoi — Play</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0e0a06;
+  --stone:#1c1408;
+  --gold:#c8922a;
+  --gold-lt:#f0c060;
+  --ember:#e84c1e;
+  --smoke:#4a3820;
+  --text:#e8d8b0;
+  --dim:#7a6040;
+  --glow-gold:0 0 20px #c8922a88,0 0 50px #c8922a22;
+  --glow-ember:0 0 20px #e84c1e88,0 0 50px #e84c1e22;
+  --rod-w:10px;
+}
+
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:'Crimson Pro',serif;overflow:hidden;user-select:none}
+
+/* ── Particle canvas (embers) ── */
+#fx{position:fixed;inset:0;pointer-events:none;z-index:0}
+
+/* ── Vignette ── */
+body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse 80% 80% at 50% 50%,transparent 40%,#0e0a06cc 100%)}
+
+/* ── Main layout ── */
+#app{position:relative;z-index:2;display:flex;flex-direction:column;
+  align-items:center;height:100vh;padding:12px 20px 8px;gap:0}
+
+/* ── Header ── */
+header{text-align:center;margin-bottom:4px}
+h1{font-family:'Cinzel',serif;font-size:clamp(1.3rem,3vw,2.1rem);font-weight:900;
+  color:var(--gold-lt);letter-spacing:.2em;text-transform:uppercase;
+  text-shadow:0 0 30px #c8922a66,0 2px 0 #0008}
+.tagline{font-size:.8rem;color:var(--dim);letter-spacing:.25em;
+  text-transform:uppercase;margin-top:2px}
+
+/* ── Canvas ── */
+#cv{display:block;cursor:pointer;max-width:100%}
+
+/* ── Controls ── */
+#controls{display:flex;flex-wrap:wrap;align-items:center;
+  justify-content:center;gap:12px;margin-top:8px}
+
+.ctrl{display:flex;align-items:center;gap:7px}
+label{font-size:.72rem;letter-spacing:.15em;color:var(--dim);text-transform:uppercase}
+
+input[type=range]{-webkit-appearance:none;width:85px;height:3px;
+  background:var(--smoke);border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--gold);box-shadow:0 0 8px var(--gold);cursor:pointer}
+.vbadge{font-size:.8rem;color:var(--gold);min-width:16px;text-align:center}
+
+btn-group{display:flex;gap:8px}
+button{font-family:'Cinzel',serif;font-size:.6rem;font-weight:700;
+  letter-spacing:.18em;text-transform:uppercase;
+  padding:7px 16px;border-radius:2px;cursor:pointer;
+  transition:all .2s;border:1px solid}
+#btnNew{border-color:var(--gold);color:var(--gold);background:transparent}
+#btnNew:hover{background:#c8922a18;box-shadow:var(--glow-gold)}
+#btnUndo{border-color:var(--smoke);color:var(--dim);background:transparent}
+#btnUndo:hover{border-color:var(--gold);color:var(--gold)}
+#btnSolve{border-color:var(--ember);color:var(--ember);background:transparent}
+#btnSolve:hover{background:#e84c1e18;box-shadow:var(--glow-ember)}
+
+/* ── Stats ── */
+#stats{display:flex;gap:24px;font-size:.72rem;color:var(--dim);
+  letter-spacing:.12em;margin-top:6px}
+.stat em{font-style:normal;color:var(--gold-lt);font-size:.9rem}
+
+/* ── Message overlay ── */
+#msg{font-family:'Cinzel',serif;font-size:clamp(.85rem,2vw,1.1rem);
+  letter-spacing:.18em;color:var(--gold-lt);min-height:1.6em;
+  text-align:center;margin-top:4px;
+  text-shadow:var(--glow-gold);transition:opacity .4s}
+
+/* ── Hint strip ── */
+#hint{font-size:.68rem;color:var(--smoke);letter-spacing:.1em;
+  text-align:center;margin-top:2px}
+</style>
+</head>
+<body>
+<canvas id="fx"></canvas>
+
+<div id="app">
+  <header>
+    <h1>Tower of Hanoi</h1>
+    <p class="tagline">The Ancient Puzzle — Interactive</p>
+  </header>
+
+  <canvas id="cv"></canvas>
+
+  <div id="controls">
+    <div class="ctrl">
+      <label>Disks</label>
+      <input type="range" id="slDisks" min="2" max="8" value="4">
+      <span class="vbadge" id="vDisks">4</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="btnNew">⬡ New Game</button>
+      <button id="btnUndo">↩ Undo</button>
+      <button id="btnSolve">⚡ Auto-Solve</button>
+    </div>
+  </div>
+
+  <div id="stats">
+    <div class="stat">MOVES <em id="sMoves">0</em></div>
+    <div class="stat">BEST <em id="sBest">—</em></div>
+    <div class="stat">OPTIMAL <em id="sOpt">15</em></div>
+    <div class="stat">EFFICIENCY <em id="sEff">—</em></div>
+  </div>
+
+  <div id="msg"></div>
+  <div id="hint">Click a rod to pick up · Click another to place</div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════
+   EMBER / PARTICLE FX
+════════════════════════════════════════════════════ */
+(()=>{
+  const cv=document.getElementById('fx'),cx=cv.getContext('2d');
+  let particles=[];
+  function resize(){cv.width=innerWidth;cv.height=innerHeight}
+  function spawnEmber(){
+    if(particles.length>80)return;
+    particles.push({
+      x:Math.random()*innerWidth,
+      y:innerHeight+10,
+      vx:(Math.random()-.5)*0.6,
+      vy:-(Math.random()*1.2+0.4),
+      life:1,decay:Math.random()*.006+.003,
+      r:Math.random()*2+.5,
+      hue:Math.random()*30+10
+    });
+  }
+  function tick(){
+    cx.clearRect(0,0,cv.width,cv.height);
+    if(Math.random()<.15)spawnEmber();
+    particles=particles.filter(p=>{
+      p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+      if(p.life<=0)return false;
+      cx.beginPath();cx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      cx.fillStyle=`hsla(${p.hue},90%,65%,${p.life*.7})`;
+      cx.fill();
+      return true;
+    });
+    requestAnimationFrame(tick);
+  }
+  window.addEventListener('resize',resize);
+  resize();tick();
+})();
+
+/* ════════════════════════════════════════════════════
+   GAME ENGINE
+════════════════════════════════════════════════════ */
+const cv   = document.getElementById('cv');
+const ctx  = cv.getContext('2d');
+
+// ── Responsive layout ──
+function layout(){
+  const maxW=Math.min(innerWidth-32,860);
+  const maxH=Math.min(innerHeight-230,440);
+  cv.width=maxW; cv.height=maxH;
+}
+layout();
+window.addEventListener('resize',()=>{layout();initGame()});
+
+// ── Color per disk (warm fire palette) ──
+function diskColor(idx,n){
+  // idx 0 = smallest; shift hue from deep red → amber → gold
+  const t=idx/(Math.max(n-1,1));
+  const h=10+t*40, s=85, l=45+t*20;
+  return `hsl(${h},${s}%,${l}%)`;
+}
+
+// ── Layout constants ──
+function C(){
+  const W=cv.width,H=cv.height;
+  const baseY=H*.85, rodH=H*.65;
+  const rodXs=[W*.18,W*.5,W*.82];
+  const n=parseInt(slDisks.value);
+  const diskH=Math.min(30,Math.floor(rodH*.88/n));
+  const maxDW=W*.2, minDW=W*.055;
+  return{W,H,baseY,rodH,rodXs,n,diskH,maxDW,minDW};
+}
+
+function diskW(idx){
+  const{n,maxDW,minDW}=C();
+  // idx 0 = smallest
+  return minDW+(maxDW-minDW)*(idx/(Math.max(n-1,1)));
+}
+function diskTopY(rodIdx,stackLen){
+  const{baseY,diskH}=C();
+  return baseY-diskH*stackLen;
+}
+
+// ── Game state ──
+let rods,selected,moveCount,history,bestScore,autoSolveId;
+let diskCount=4;
+let floatAnim={active:false}; // floating disk when selected
+
+// ── UI elements ──
+const slDisks=document.getElementById('slDisks');
+const vDisks =document.getElementById('vDisks');
+const sMoves =document.getElementById('sMoves');
+const sBest  =document.getElementById('sBest');
+const sOpt   =document.getElementById('sOpt');
+const sEff   =document.getElementById('sEff');
+const msgEl  =document.getElementById('msg');
+const hintEl =document.getElementById('hint');
+
+slDisks.addEventListener('input',()=>{
+  vDisks.textContent=slDisks.value;
+  initGame();
+});
+
+function initGame(){
+  if(autoSolveId){clearTimeout(autoSolveId);autoSolveId=null}
+  diskCount=parseInt(slDisks.value);
+  rods=[[],[],[]];
+  for(let i=diskCount-1;i>=0;i--) rods[0].push(i); // largest at bottom, idx=diskCount-1
+  selected=null;
+  moveCount=0;
+  history=[];
+  bestScore=null;
+  sOpt.textContent=(Math.pow(2,diskCount)-1);
+  updateStats();
+  setMsg('');
+  hintEl.style.opacity='1';
+  draw();
+}
+
+function updateStats(){
+  sMoves.textContent=moveCount;
+  sBest.textContent=bestScore??'—';
+  const opt=Math.pow(2,diskCount)-1;
+  if(moveCount>0){
+    const eff=Math.round((opt/moveCount)*100);
+    sEff.textContent=eff+'%';
+  } else {
+    sEff.textContent='—';
+  }
+}
+
+function setMsg(txt,color='var(--gold-lt)'){
+  msgEl.textContent=txt;
+  msgEl.style.color=color;
+}
+
+/* ════════════════════════════════════════════════════
+   DRAWING
+════════════════════════════════════════════════════ */
+function draw(){
+  const{W,H,baseY,rodH,rodXs,n,diskH,maxDW}=C();
+  ctx.clearRect(0,0,W,H);
+
+  // ── Ground platform ──
+  const grd=ctx.createLinearGradient(0,baseY+2,0,baseY+18);
+  grd.addColorStop(0,'#3a2810');
+  grd.addColorStop(1,'#0e0a06');
+  ctx.fillStyle=grd;
+  ctx.beginPath();
+  ctx.roundRect(W*.04,baseY+2,W*.92,18,3);
+  ctx.fill();
+  ctx.strokeStyle='#c8922a33';ctx.lineWidth=1;ctx.stroke();
+
+  // Decorative runes on platform
+  ctx.font=`${Math.round(H*.022)}px Cinzel,serif`;
+  ctx.textAlign='center';ctx.fillStyle='#c8922a22';
+  ctx.fillText('⬡  ᚱ  ᚢ  ᚾ  ᛖ  ᛋ  ⬡',W/2,baseY+14);
+
+  // ── Rods ──
+  rodXs.forEach((rx,ri)=>{
+    // Glow halo for selected rod
+    if(selected!==null && ri===selected){
+      ctx.save();
+      ctx.shadowColor='#c8922a';ctx.shadowBlur=24;
+      ctx.strokeStyle='#c8922a44';ctx.lineWidth=18;
+      ctx.beginPath();ctx.moveTo(rx,baseY);ctx.lineTo(rx,baseY-rodH);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const rg=ctx.createLinearGradient(rx-5,0,rx+5,0);
+    rg.addColorStop(0,'#2a1a08');rg.addColorStop(.5,'#6a4820');rg.addColorStop(1,'#2a1a08');
+    ctx.fillStyle=rg;
+    ctx.shadowColor='#c8922a22';ctx.shadowBlur=6;
+    ctx.beginPath();ctx.roundRect(rx-5,baseY-rodH,10,rodH,5);
+    ctx.fill();
+    ctx.shadowBlur=0;
+
+    // Cap
+    ctx.fillStyle='#c8922a';
+    ctx.beginPath();ctx.arc(rx,baseY-rodH,6,0,Math.PI*2);ctx.fill();
+
+    // Label
+    ctx.font=`700 ${Math.round(H*.05)}px Cinzel,serif`;
+    ctx.fillStyle=ri===selected?'var(--gold-lt)':'#3a2810';
+    ctx.shadowColor=ri===selected?'#c8922a':'transparent';
+    ctx.shadowBlur=ri===selected?10:0;
+    ctx.fillText(['A','B','C'][ri],rx,baseY+36);
+    ctx.shadowBlur=0;
+  });
+
+  // ── Disks on rods (skip selected top if floating) ──
+  for(let ri=0;ri<3;ri++){
+    const stack=rods[ri];
+    const skipTop=(selected===ri); // we'll draw the top disk floating
+    const drawLen=skipTop?stack.length-1:stack.length;
+    for(let si=0;si<drawLen;si++){
+      const diskIdx=stack[si];
+      const y=diskTopY(ri,si+1)+diskH/2;
+      drawDisk(diskIdx,rodXs[ri],y,1.0);
+    }
+  }
+
+  // ── Floating selected disk ──
+  if(selected!==null && rods[selected].length>0){
+    const diskIdx=rods[selected][rods[selected].length-1];
+    const stackLen=rods[selected].length;
+    const floatY=diskTopY(selected,stackLen)+diskH/2 - diskH*1.6;
+    const bob=Math.sin(Date.now()*.003)*4;
+    drawDisk(diskIdx,rodXs[selected],floatY+bob,1.0,true);
+
+    // Arrow pointing down to rod
+    drawArrow(rodXs[selected],floatY+diskH/2+8+bob,rodXs[selected],diskTopY(selected,stackLen)-4);
+  }
+
+  // ── Drop target hints ──
+  if(selected!==null){
+    rodXs.forEach((rx,ri)=>{
+      if(ri===selected)return;
+      const canDrop=canPlace(selected,ri);
+      if(canDrop){
+        const targetY=diskTopY(ri,rods[ri].length);
+        ctx.strokeStyle='#c8922a66';
+        ctx.lineWidth=2;
+        ctx.setLineDash([6,4]);
+        ctx.beginPath();
+        const dw=diskW(rods[selected][rods[selected].length-1]);
+        ctx.roundRect(rx-dw/2,targetY,dw,diskH,diskH/2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  }
+
+  requestAnimationFrame(draw);
+}
+
+function drawDisk(idx,cx,cy,alpha,floating=false){
+  const{diskH}=C();
+  const dw=diskW(idx);
+  const x=cx-dw/2,y=cy-diskH/2;
+  const r=diskH/2;
+  const col=diskColor(idx,diskCount);
+
+  ctx.globalAlpha=alpha;
+
+  if(floating){
+    ctx.shadowColor=col;ctx.shadowBlur=22;
+  }
+
+  // Body gradient
+  const g=ctx.createLinearGradient(x,y,x,y+diskH);
+  g.addColorStop(0,lightenHSL(col,20));
+  g.addColorStop(.45,col);
+  g.addColorStop(1,darkenHSL(col,25));
+  ctx.fillStyle=g;
+  ctx.beginPath();ctx.roundRect(x,y,dw,diskH,r);ctx.fill();
+
+  // Shine
+  const shine=ctx.createLinearGradient(x,y,x,y+diskH*.45);
+  shine.addColorStop(0,'rgba(255,255,255,.22)');
+  shine.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=shine;
+  ctx.beginPath();ctx.roundRect(x+2,y+2,dw-4,diskH*.45,r);ctx.fill();
+
+  // Border
+  ctx.strokeStyle=lightenHSL(col,35);ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.roundRect(x,y,dw,diskH,r);ctx.stroke();
+
+  // Disk number (small)
+  if(dw>36){
+    ctx.font=`600 ${Math.round(diskH*.45)}px Crimson Pro,serif`;
+    ctx.textAlign='center';
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ctx.shadowBlur=0;
+    ctx.fillText(idx+1,cx,cy+diskH*.17);
+  }
+
+  ctx.shadowBlur=0;ctx.globalAlpha=1;
+}
+
+function drawArrow(x1,y1,x2,y2){
+  ctx.strokeStyle='#c8922a88';ctx.lineWidth=1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.setLineDash([]);
+  // arrowhead
+  ctx.fillStyle='#c8922a88';
+  ctx.beginPath();ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-5,y2-8);ctx.lineTo(x2+5,y2-8);ctx.closePath();ctx.fill();
+}
+
+// HSL manipulation helpers
+function lightenHSL(hsl,pct){return hsl.replace(/(\d+)%\)/,(_,l)=>`${Math.min(100,+l+pct)}%)`)}
+function darkenHSL(hsl,pct){return hsl.replace(/(\d+)%\)/,(_,l)=>`${Math.max(0,+l-pct)}%)`)}
+
+/* ════════════════════════════════════════════════════
+   GAME LOGIC
+════════════════════════════════════════════════════ */
+function canPlace(fromRod,toRod){
+  if(rods[fromRod].length===0)return false;
+  if(rods[toRod].length===0)return true;
+  const top=rods[fromRod][rods[fromRod].length-1];
+  const dest=rods[toRod][rods[toRod].length-1];
+  return top<dest;
+}
+
+function rodIndexAt(px){
+  const{rodXs,W}=C();
+  // Click zones: ⅓ of canvas width each
+  const zone=W/3;
+  if(px<zone)return 0;
+  if(px<zone*2)return 1;
+  return 2;
+}
+
+function handleClick(px){
+  if(autoSolveId)return; // block manual clicks during auto-solve
+
+  if(selected===null){
+    // Pick up top disk from clicked rod
+    const ri=rodIndexAt(px);
+    if(rods[ri].length>0){
+      selected=ri;
+      setMsg('Now click a destination rod','#f0c060');
+    } else {
+      setMsg('No disk on that rod!','var(--ember)');
+    }
+  } else {
+    const ri=rodIndexAt(px);
+    if(ri===selected){
+      // Deselect
+      selected=null;
+      setMsg('');
+    } else if(canPlace(selected,ri)){
+      // Commit move
+      history.push(rods.map(r=>[...r]));
+      const disk=rods[selected].pop();
+      rods[ri].push(disk);
+      moveCount++;
+      selected=null;
+      updateStats();
+      checkWin();
+    } else {
+      setMsg('Illegal move — larger disk on smaller!','var(--ember)');
+      setTimeout(()=>setMsg(''),1200);
+    }
+  }
+}
+
+function checkWin(){
+  if(rods[2].length===diskCount){
+    const opt=Math.pow(2,diskCount)-1;
+    if(bestScore===null||moveCount<bestScore)bestScore=moveCount;
+    updateStats();
+    const extra=moveCount===opt?' — PERFECT! 🔥':moveCount<=opt*1.2?' — Excellent!':' — Well done!';
+    setMsg(`✦ Solved in ${moveCount} moves${extra}`,
+      moveCount===opt?'var(--ember)':'var(--gold-lt)');
+    hintEl.style.opacity='0';
+    spawnWinParticles();
+  }
+}
+
+function spawnWinParticles(){
+  // Quick celebratory flash via canvas overlay
+  let alpha=0.6,frames=0;
+  const flash=()=>{
+    const{W,H}=C();
+    ctx.save();
+    ctx.fillStyle=`rgba(200,146,42,${alpha})`;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+    alpha-=0.04;frames++;
+    if(alpha>0)requestAnimationFrame(flash);
+  };
+  flash();
+}
+
+/* ── Undo ── */
+document.getElementById('btnUndo').addEventListener('click',()=>{
+  if(autoSolveId||history.length===0)return;
+  rods=history.pop().map(r=>[...r]);
+  moveCount=Math.max(0,moveCount-1);
+  selected=null;
+  setMsg('');
+  hintEl.style.opacity='1';
+  updateStats();
+});
+
+/* ── New Game ── */
+document.getElementById('btnNew').addEventListener('click',initGame);
+
+/* ════════════════════════════════════════════════════
+   AUTO-SOLVE
+════════════════════════════════════════════════════ */
+function buildSolveMoves(n,src,aux,dst,moves){
+  if(n===0)return;
+  buildSolveMoves(n-1,src,dst,aux,moves);
+  moves.push([src,dst]);
+  buildSolveMoves(n-1,aux,src,dst,moves);
+}
+
+document.getElementById('btnSolve').addEventListener('click',()=>{
+  if(autoSolveId){clearTimeout(autoSolveId);autoSolveId=null;return}
+  // Reset to fresh state for auto-solve
+  initGame();
+  const moves=[];
+  buildSolveMoves(diskCount,0,1,2,moves);
+  setMsg('⚡ Auto-solving…','var(--ember)');
+  hintEl.style.opacity='0';
+  selected=null;
+  let mi=0;
+  function step(){
+    if(mi>=moves.length){
+      autoSolveId=null;
+      setMsg(`✦ Auto-solved in ${moves.length} moves (optimal)!`,'var(--ember)');
+      return;
+    }
+    const[src,dst]=moves[mi++];
+    history.push(rods.map(r=>[...r]));
+    const disk=rods[src].pop();
+    rods[dst].push(disk);
+    moveCount++;
+    updateStats();
+    // Speed: ~350ms per move
+    autoSolveId=setTimeout(step,350);
+  }
+  step();
+});
+
+/* ════════════════════════════════════════════════════
+   INPUT HANDLING
+════════════════════════════════════════════════════ */
+cv.addEventListener('click',e=>{
+  const rect=cv.getBoundingClientRect();
+  handleClick(e.clientX-rect.left);
+});
+
+// Touch support
+cv.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const rect=cv.getBoundingClientRect();
+  const t=e.changedTouches[0];
+  handleClick(t.clientX-rect.left);
+},{passive:false});
+
+/* ════════════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════════════ */
+vDisks.textContent=slDisks.value;
+initGame();
+</script>
+</body>
+</html>
